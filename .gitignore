@@ -1,0 +1,45 @@
+# Dependencias
+node_modules/
+
+# Build / TypeScript
+dist/
+build/
+*.tsbuildinfo
+
+# Secretos — NUNCA commitear (ver .env.example para el contrato)
+.env
+.env.*
+!.env.example
+
+# Spike throwaway de autenticación (tarea 1.1: no se commitea)
+spike/
+
+# Sesiones y cookies de I-WISP Manager
+*.cookies
+*.cookies.json
+storage-state*.json
+playwright/.auth/
+
+# Logs y artefactos generados
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# Salidas del PDF / XLSX
+output/
+outputs/
+*.pdf
+*.xlsx
+
+# Tests
+coverage/
+.nyc_output/
+
+# Editor y SO
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
