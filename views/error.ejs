@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Error <%= status %> — EMC</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; background: #f5f7fa; color: #1f2933; margin: 0; }
+    header { background: #9b2c2c; color: #fff; padding: 16px 24px; }
+    header h1 { font-size: 18px; margin: 0; }
+    main { max-width: 720px; margin: 32px auto; padding: 0 16px; }
+    .causa { background: #fff; border: 1px solid #f6b8b8; border-left: 6px solid #9b2c2c; padding: 16px; border-radius: 6px; }
+    .codigo { color: #7b8794; font-size: 13px; margin-top: 12px; }
+    a { color: #0b6e4f; }
+  </style>
+</head>
+<body>
+  <header><h1>No se pudo generar el estado de cuenta</h1></header>
+  <main>
+    <div class="causa">
+      <p><strong>Causa:</strong> <%= causa %></p>
+      <p>No se entregó ningún archivo: el documento sólo se envía cuando se genera completo.</p>
+      <p class="codigo">HTTP <%= status %></p>
+    </div>
+    <p><a href="/">← Volver al listado</a></p>
+  </main>
+</body>
+</html>

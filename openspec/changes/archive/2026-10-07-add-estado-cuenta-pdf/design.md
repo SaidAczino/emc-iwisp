@@ -8,12 +8,17 @@ La API pública de I-WISP (27 endpoints en `api-i-wisp-manager.readme.io`) **no 
 
 **Hallazgos de la exploración que condicionan el diseño** (obtenidos analizando el HTML real y un `.har` de la navegación):
 
-1. El `.har` no contiene cookies porque se guardó sin información sensible → **el mecanismo de autenticación del portal sigue sin verificar**. Es el único *unknown* bloqueante.
+1. ~~El `.har` no contiene cookies~~ → **RESUELTO EN EL SPIKE**: la autenticación es **HTTP puro** (sin navegador). Flujo verificado: `POST /login` (form con `id_empresa`, `user`, `pass`, `token`, `iniciar_a`) → `302 /sesion` + cookie `PHPSESSID`; después **segundo paso obligatorio**: `POST /sesion/seleccion` con `seleccion_id=ALL_GEO` (o el id de la geocerca) y `seleccion_recordar=on` → `302 /`. Sin ese paso, el portal responde `302 /redirect/sesion` o un script de 81 bytes `window.location="/login"`.
+   - **CAPTCHA: sí.** reCAPTCHA v3 invisible (sitekey `6Ld1FjwrAAAAAB-eRtB4N7vT_1LJoIt5r8YsDAOK`), validado en servidor (token inventado ⇒ `iwisp_message_bounce("Error, código incorrecto")`; sin `token` ⇒ silencio). El token v3 se obtiene por el flujo HTTP `anchor` → `reload` de Google, sin navegador.
+   - **Sesión:** cookie `PHPSESSID` (`path=/`, sin `Expires` = cookie de sesión). Vigencia observada ≥ 10 min; el TTL exacto del servidor no se midió (requiere espera real). La renovación bajo demanda del diseño lo cubre.
+   - **Credenciales sin sesión: no.** La página y el XLSX responden el redirect de login; `?api_key=` no autentica el portal.
+   - `GET /api/getClient` y `GET /api/getClientDebt` **no** aceptan query string ni form: responden `400`. Funcionan con **POST JSON** (`api_key` + `idcliente` / `api_key`), sin sesión de portal.
 2. El parseo de la tabla es **1:1 y limpio**: 7 `<td>` fijos por fila. La señal de tipo más confiable es el atributo `title="Cobranza|Factura"`, no `style="color:green|red"` (presentación).
 3. La columna `balance` del portal **no es un running balance**. Ordenando el histórico cronológicamente oscila entre $300/$600/$900 de forma inexplicable. **No se puede usar para calcular totales ni replicar en el PDF.**
 4. La tabla se llama `_reducida`. No hay evidencia de tope de filas (para el cliente 453, sus 40 movimientos arrancan en su fecha de alta), pero el nombre sugiere que I-WISP podría recortar el histórico en el futuro.
 5. El campo `detalle` **no es consistente con la `fecha`**: hay filas con detalle "MES DE MAYO" y fecha de julio. El detalle se copia literal.
-6. Existe un endpoint hermano no explorado: `/clientes/movimientos-xlsx/{id}` (y `/clientes/movimientos-pdf/{id}`), referenciado en un `onclick` del propio HTML. **No verificado.**
+6. ~~Existe un endpoint hermano no explorado: `/clientes/movimientos-xlsx/{id}`... **No verificado.**~~ → **VERIFICADO EN EL SPIKE**: responde `200` con XLSX válido (`PK`, `Content-Disposition: IWM_movimientos_YYYYMMDD.xlsx`), mismas 40 filas que el HTML, columnas `Tipo | Número | Cobranza | Detalle | Importe | Fecha | Balance`, con `Tipo` = `CO`/`FX` (¡no `Cobranza`/`Factura`!) y sin `onclick` (el identificador se compone de tipo+número). D2 tiene dos implementaciones reales.
+6b. La documentación de la API (`api-i-wisp-manager.readme.io`) **miente en un parámetro**: dice `api` para `getClientDebt`, pero el servidor sólo acepta `api_key` (igual que el resto). `getClient` exige `idcliente`, no `id`.
 7. La API Key y la credencial de portal dan acceso total a la base de clientes del ISP. Son secretos de alto impacto en un repo git.
 
 ## Goals / Non-Goals
@@ -100,9 +105,15 @@ La API pública de I-WISP (27 endpoints en `api-i-wisp-manager.readme.io`) **no 
 
 **Por qué:** `title` es semántico y estable; el color es presentación y puede cambiar por un ajuste de tema sin que cambie la lógica.
 
+### D9 — Tipos `DX`/`CX` (notas de débito/crédito) clasificados por validación empírica
+
+**Elegido:** el XLSX trae además de `FX`/`CO` los códigos **`DX`** (HTML: `title="Nota de Débito"`) y **`CX`** (`title="Nota de Crédito"`); se normalizan `DX → factura` (cargo) y `CX → cobranza` (abono). El matching es por etiqueta sin acentos (`nota de debito`/`nota de credito`), tolerante al charset del portal.
+
+**Por qué:** no estaba documentado en el spike y rompía la extracción en producción (clientes 7, 8, 17, 18, 44, 472…). Se decidió comparando contra `getClient.balance`: contar `DX` como cargo y `CX` como abono reproduce el saldo del portal en **todos** los clientes verificados; las hipótesis contrarias (invertidas, neutras o ambas en el mismo sentido) no. Ver `scripts/validar.ts` → `output/informe-validacion.md`.
+
 ## Risks / Trade-offs
 
-**[La autenticación del portal no está verificada]** → Spike de 15 minutos antes de decidir: un POST de login y un GET a la página. El resultado determina el camino. La interfaz `PortalSession` (D3) hace que el camino elegido sea reemplazable.
+**[La autenticación del portal no estaba verificada]** → **Resuelto por el spike: camino HTTP puro confirmado** (Camino A). Login con reCAPTCHA v3 vía HTTP + `POST /sesion/seleccion`. Sólo queda riesgo operativo: Google puede degradar el flujo `anchor`→`reload` de tokens; si ocurre, la interfaz `PortalSession` (D3) permite cambiar a Playwright sin tocar scraper ni PDF. La vigilancia es la renovación bajo demanda (4.2).
 
 **[I-WISP cambia el markup de la tabla]** → Abstracción `MovementSource` (D2) + assertions explícitas de fallo en vez de parseo tolerante. Un PDF con cero filas o con columnas mal mapeadas es peor que un error.
 
@@ -129,9 +140,26 @@ La API pública de I-WISP (27 endpoints en `api-i-wisp-manager.readme.io`) **no 
 
 **Rollback:** no hay migración de datos ni esquema que revertir. La herramienta es aditiva y de solo lectura; borrar el directorio de artefactos la deja sin efecto sobre I-WISP.
 
+## Hallazgos de la validación end-to-end (tasks 9.1–9.3)
+
+Ejecutado con `npm run validar` contra el portal real (`scripts/validar.ts` → `output/informe-validacion.md`):
+
+- **Recuento de movimientos (XLSX vs HTML), 5/5 clientes coincidente**: 450 → 36/36, 452 → 33/33, 453 → 40/40, 461 → 19/19, 472 → 40/40.
+- **`saldoPendiente` calculado == `getClient.balance`, 6/6 clientes** (450, 452, 453, 461, 472, 91): sin discrepancias que documentar. La columna `balance` del portal se conserva sólo como referencia (D4) y no interviene en ningún cálculo.
+- **Historial extenso**: el deudor más largo de los 287 tiene **49 movimientos** (cliente 91) y su PDF sale en 3 páginas sin pérdida de filas. Ningún cliente real supera 100 movimientos; ese umbral queda cubierto por el test sintético de 130 filas (`tests/render.test.ts`, task 7.10).
+- **`GET /sesion` obligatorio** antes de `POST /sesion/seleccion` (corroborado en producción; ver Open Questions).
+- **El XLSX real pone los datos en la columna 3** (columnas 1–2 vacías): el lector deriva el offset desde la celda `Tipo` del encabezado. Además, los índices 1–2 son huecos del array de ExcelJS, a los que `Array.prototype.findIndex` **sí** invoca el callback con `undefined` (Node 24) — por eso el localizador es defensivo.
+- **El portal sirve HTML en windows-1252 sin declarar charset**: decodificar como UTF-8 rompía los acentos (`Facturación`, `Nota de Débito` → mojibake). `decodificarHtml` prueba charset declarado → UTF-8 válido → windows-1252.
+- **Clientes con id < 450 no exponen la página HTML de movimientos** (responden `302 /clientes/listado`); su XLSX sí es válido y por cliente. En ese caso el recuento HTML queda como `n/d` y la fuente es el XLSX oficial.
+
 ## Open Questions
 
-- **¿Responde `/clientes/movimientos-xlsx/{id}` y con qué formato exacto?** → Se resuelve en el spike. Determina si D2 tiene dos implementaciones reales o una.
-- **¿El login por POST funciona, o hay CAPTCHA / WAF / requisito de sesión en dos pasos?** → Se resuelve en el spike.
-- **¿Cuánto vive una sesión antes de expirar?** → Define si basta HTTP puro o si se necesita renovación en segundo plano.
+**Resueltas en el spike (2026-10-07, script desechado en `spike/`, no commiteado):**
+
+- ~~¿Responde `/clientes/movimientos-xlsx/{id}` y con qué formato exacto?~~ → **Sí.** XLSX válido, mismas 40 filas que el HTML, `Tipo` = `CO`/`FX`. D2 tiene dos implementaciones reales; el XLSX es viable como fuente primaria.
+- ~~¿El login por POST funciona, o hay CAPTCHA / WAF / requisito de sesión en dos pasos?~~ → **POST funciona**, pero exige **reCAPTCHA v3** (token v3 obtenido vía flujo HTTP `anchor`→`reload`, sin navegador) y una **cadena de dos pasos**: `GET /sesion` **antes** de `POST /sesion/seleccion` (geocerca). Saltar el `GET /sesion` hace que `seleccion` responda `302 /logout` y la sesión quede inválida (verificado en la validación). No hay WAF visible ni límite de intentos observado.
+- ~~¿Cuánto vive una sesión antes de expirar?~~ → **≥ 10 min observado** (cookie `PHPSESSID` de sesión, TTL de servidor no medido). Basta con renovación bajo demanda ante redirect (tarea 4.2); no se requiere refresh en segundo plano.
+
+**Pendiente:**
+
 - **¿El nombre de la tabla seguirá siendo `_reducida`?** → Si I-WISP agrega un filtro de periodo al dashboard, el parseo deja de ser histórico. El sanity check de D5 es la detección; la respuesta a tiempo es una decisión de producto (¿pedir a I-WISP un endpoint de movimientos?).

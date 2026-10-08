@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clientes con adeudo — EMC</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: Arial, Helvetica, sans-serif; margin: 0; background: #f5f7fa; color: #1f2933; }
+    header { background: #0b6e4f; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+    header h1 { font-size: 18px; margin: 0; }
+    main { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+    .aviso { background: #fff5f5; border: 1px solid #f6b8b8; color: #9b2c2c; padding: 12px 14px; border-radius: 6px; margin-bottom: 16px; }
+    .vacio { background: #fff; border: 1px dashed #cbd2d9; padding: 32px; text-align: center; color: #52606d; border-radius: 6px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 1px 3px rgba(16,42,67,.12); border-radius: 6px; overflow: hidden; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e4e7eb; font-size: 14px; }
+    th { background: #102a43; color: #fff; font-size: 13px; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tr:hover td { background: #f0f4f8; }
+    a.descarga { display: inline-block; background: #0b6e4f; color: #fff; text-decoration: none;
+      padding: 6px 12px; border-radius: 4px; font-size: 13px; }
+    a.descarga:hover { background: #08543c; }
+    footer { max-width: 960px; margin: 24px auto; padding: 0 16px; color: #7b8794; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>EMC — Estados de cuenta</h1>
+    <span>Clientes con adeudo en I-WISP</span>
+  </header>
+  <main>
+    <% if (error) { %>
+      <div class="aviso"><strong>No se pudo cargar el listado:</strong> <%= error %></div>
+    <% } %>
+
+    <% if (!error && clientes.length === 0) { %>
+      <div class="vacio">No hay clientes con adeudo. Nada que descargar por ahora.</div>
+    <% } else if (clientes.length > 0) { %>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nombre</th>
+            <th>Celular</th>
+            <th class="num">Saldo adeudado</th>
+            <th>Estado de cuenta</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% clientes.forEach(function(c) { %>
+            <tr>
+              <td><%= c.id %></td>
+              <td><%= c.nombre %></td>
+              <td><%= c.celular || '—' %></td>
+              <td class="num">$<%= Number(c.deuda).toFixed(2) %></td>
+              <td><a class="descarga" href="/clientes/<%= c.id %>/estado-cuenta.pdf">Descargar PDF</a></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } %>
+  </main>
+  <footer>Documento de cortesía sin validez fiscal · los PDF se generan bajo demanda desde I-WISP.</footer>
+</body>
+</html>

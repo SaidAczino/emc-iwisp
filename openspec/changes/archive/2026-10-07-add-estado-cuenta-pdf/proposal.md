@@ -33,10 +33,11 @@ Ninguna. Es el primer cambio del proyecto; no hay specs existentes en `openspec/
 ## Impact
 
 **Sistema externo (solo lectura, con sesión):** portal `cloud.iwisp.mx:4434`. Endpoints usados:
-- `GET /api/getClient` — datos maestros y saldo (API Key en el body). Es la fuente **autorizada** del saldo.
-- `GET /clientes/movimientos-xlsx/{id}` — fuente **primaria** de movimientos (aún sin verificar).
+- `POST /api/getClient` — datos maestros y saldo (JSON body con `api_key` + `idcliente`; el GET/query devuelve `400`). Es la fuente **autorizada** del saldo.
+- `POST /api/getClientDebt` — listado de deudores (JSON body con `api_key`; la documentación dice `api`, el servidor exige `api_key`).
+- `GET /clientes/movimientos-xlsx/{id}` — fuente **primaria** de movimientos (**verificada en el spike**: XLSX válido, mismas filas que el HTML, `Tipo` = `CO`/`FX`).
 - `GET /clientes/facturas_cobranza/{id}` — **fallback** de movimientos (HTML de la tabla).
-- `POST /login` — sesión del portal (**sin verificar**; es el único *unknown* del proyecto).
+- `POST /login` + `POST /sesion/seleccion` — sesión del portal (**verificados en el spike**: HTTP puro con reCAPTCHA v3 y segundo paso de geocerca).
 
 **Ningún endpoint de escritura.** El cambio no modifica datos en I-WISP.
 
